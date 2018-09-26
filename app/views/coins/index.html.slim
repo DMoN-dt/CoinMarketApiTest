@@ -1,0 +1,185 @@
+- unless @price_adt_name.nil?
+  .row.mb-3: .col.text-right
+    span #{I18n.t('cmarket.price_currency')}:
+    span.lng-switch: a(href="#{request.base_url + url_for({locale: true, params: {currency: @price_adt_name} })}") #{@price_adt_name}
+    span.lng-switch: a(href="#{request.base_url + url_for({locale: true, params: {currency: 'USD'} })}") USD
+
+- if @requested_price_currency_absent
+  .alert.alert-danger.text-left(role="alert")
+    span #{I18n.t("cmarket.price_currency_absent")}
+
+- if @table_data_count.positive?
+
+  - if @totalPages&.positive?
+    center: .paginate.paginate-default
+
+      - if @currentPage != @startPage
+        - if @startPage != 1
+          a.pag_el(href="#{pagination_link(1)}") 1
+        - if @startPage > 2
+          a.pag_el(href="#{pagination_link(((@currentPage - @numbersCount) < 1) ? 2 : (@currentPage - @numbersCount))}") ..
+
+      - (@startPage..@endPage).each do |sp|
+        - if((sp - @currentPage).abs <= 5)
+          - if(sp == @currentPage)
+            span.pag_el: b #{sp}
+          - else
+            a.pag_el(href="#{pagination_link(sp)}") #{sp}
+
+      - if (@currentPage != @endPage) && (@endPage != @totalPages)
+        - if @endPage < (@totalPages - 1)
+          a.pag_el(href="#{pagination_link(((@endPage + 1) > @totalPages) ? @totalPages : (@endPage + 1))}") ..
+        a.pag_el(href="#{pagination_link(@totalPages)}") #{@totalPages}
+
+  - tz_utc_offset_moscow = 3
+  p #{I18n.t('cmarket.updated_at')} #{@table_data.first['updated_at'].in_time_zone(tz_utc_offset_moscow).to_formatted_s(:rus_time_date)}
+
+.listview.listview-default.table#coins_data(data-currency="#{params['currency']}")
+  ul.listview-container-ul
+    .table-header
+      - @table_fields.values.each do |col_title|
+        span.field.text-center #{col_title}
+
+    - if @table_data_count.positive?
+      .table-body
+        - @table_data.each do |data_row|
+          li.lv-item(item-id="#{data_row['id']}" clickable)
+            - @table_fields.each_key do |fname|
+              - tclass = 'text-center'
+              - fval = data_row[fname.to_s]
+              - if(fval.blank?)
+                - fval = I18n.t('cmarket.undef')
+              - elsif(fname == 'circulating_supply')
+                - tclass = 'text-right'
+              - elsif(fname == 'price_change')
+                - tclass += (fval.to_f > 0 ? ' good' : ' bad')
+
+              span.field(class="#{tclass}" data-key="#{fname}")
+                span.value #{ fval }
+                - if(fname == 'circulating_supply')
+                  span.currency #{data_row['symbol']}
+
+    - else
+     i.listview-empty #{ I18n.t('cmarket.list_empty') }
+
+.modal.fade#modalEditor(tabindex="-1" role="dialog" aria-labelledby="modalEditor" aria-hidden="true" data-item-id="")
+  .modal-dialog.modal-dialog-centered(role="document")
+    .modal-content
+      .modal-header
+        h5.modal-title #{I18n.t('cmarket.editor.title')}
+        button.close(type="button" data-dismiss="modal" aria-label="Cancel")
+          span(aria-hidden="true") &times;
+      .modal-body
+        p #{I18n.t('cmarket.editor.coin_name')}: <span id="coin_name"></span>
+        .form-group.row
+          .col-md-5: label.col-form-label.t-grey(for="editor_price") #{ I18n.t("cmarket.table_fields.price") }:
+          .col-md-7: .input-group
+            input#editor_price.form-control(type="number" min="0")
+        .form-group.row
+          .col-md-5: label.col-form-label.t-grey(for="editor_c_supply") #{ I18n.t("cmarket.table_fields.circulating_supply") }:
+          .col-md-7: .input-group
+            input#editor_c_supply.form-control(type="number" min="0")
+
+        .alert.alert-danger.text-left#editor_alert(role="alert")
+          span #{I18n.t("cmarket.save_failed")}
+          br
+          span#editor_error
+
+      .modal-footer
+        button.btn.btn-primary(type="button" data-save) #{I18n.t('cmarket.editor.Save')}
+        button.btn.btn-secondary(type="button" data-dismiss="modal") #{I18n.t('cmarket.editor.Cancel')}
+
+
+javascript:
+
+  window["global_click"] = (event) => {
+    let etarget = $(event.target);
+    let item_parent = etarget.parents(".lv-item[clickable][item-id]")
+    
+    if(item_parent.length != 0){
+      let name = item_parent.find(".field[data-key='name'] .value").text();
+      let symbol = item_parent.find(".field[data-key='circulating_supply'] .currency").text();
+
+      document.getElementById("editor_price").value = item_parent.find(".field[data-key='#{@main_price_column}'] .value").text();
+      document.getElementById("editor_c_supply").value = item_parent.find(".field[data-key='circulating_supply'] .value").text();
+      document.getElementById("coin_name").innerText = ( (name != symbol) ? (name + " (" + symbol + ")") : name );
+      document.getElementById("modalEditor").setAttribute('data-item-id', item_parent.attr('item-id'));
+
+      editorAlert(false);
+      $('#modalEditor').modal();
+    }
+    else if(etarget.is("#modalEditor button[data-save]")){
+      let item_id = document.getElementById("modalEditor").getAttribute('data-item-id');
+      let change_data = {
+        "#{@main_price_column}": document.getElementById("editor_price").value,
+        "circulating_supply": document.getElementById("editor_c_supply").value,
+      }
+
+      let item = document.getElementById("coins_data").querySelector(".lv-item[item-id='" + item_id + "']");
+
+      // Detect unchanged values and remove them from save operation
+      Object.keys(change_data).forEach((fkey) => {
+        let initial_val = item.querySelector(".field[data-key='" + fkey + "'] .value").innerText;
+
+        if(!isNaN(initial_val))initial_val = Number(initial_val);
+        if(!isNaN(change_data[fkey]))change_data[fkey] = Number(change_data[fkey]);
+
+        if(initial_val == change_data[fkey])delete change_data[fkey];
+      })
+
+      // Exit if no changes
+      if(!Object.keys(change_data).length){
+        $('#modalEditor').modal('hide');
+        return;
+      }
+
+      // Send update to backend
+      let xhr = new XMLHttpRequest();
+
+      let this_url = window.location.href.split('?');
+      if(this_url[0].charAt(this_url[0].length - 1) != '/')this_url[0] += '/';
+      this_url[0] += item_id + '/';
+
+      xhr.open('PATCH', this_url.join('?'), true);
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded')
+      xhr.onreadystatechange = () => {
+        if(xhr.readyState == 4){
+          if(xhr.status == 200){
+            window.location.reload(true);
+
+            // Object.keys(change_data).forEach((fkey) => {
+            //   item.querySelector(".field[data-key='" + fkey + "'] .value").innerText = change_data[fkey];
+            // })
+            // 
+            // $('#modalEditor').modal('hide');
+          }
+          else {
+            editorAlert(true, xhr.status + ': ' + xhr.statusText)
+          }
+        }
+      }
+
+      change_data.currency = document.getElementById("coins_data").getAttribute("data-currency");
+
+      data = ''
+      Object.keys(change_data).forEach((fkey) => {
+        data += fkey + '=' + encodeURIComponent(change_data[fkey]) + '&'
+      })
+      xhr.send(data);
+    }
+  }
+
+  function editorAlert(show, text = ''){
+    let display;
+    
+    if(show){
+      display = 'block';
+    } else {
+      display = 'none';
+      text = '';
+    }
+    document.getElementById("editor_error").innerText = text;
+    document.getElementById("editor_alert").style.display = display;
+  }
+  
+  document.addEventListener("click", window["global_click"]);

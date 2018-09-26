@@ -1,0 +1,26 @@
+en:
+  cmarket:
+    title: Сrypto-currencies market analysis
+    list_empty: List is empty
+    undef: "undefined"
+    updated_at: The data shown was updated at
+    save_failed: "Changes save failed!"
+    price_currency: "Price Currency"
+    price_currency_absent: "Requested currency of price doesn't exist in a data table yet."
+    
+    table_fields:
+      rank: "#"
+      name: Currency Name
+      mcap: Market Cap
+      price: Price
+      price_usd: Price, USD
+      price_avg: Average Price for 24h
+      price_top_coin: Price in TOP-coin units
+      circulating_supply: Circulating Supply
+      price_change: "Change (24h), %"
+
+    editor:
+      title: Coin editor
+      coin_name: Coin Name
+      Cancel: Cancel
+      Save: Save

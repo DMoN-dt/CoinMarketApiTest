@@ -1,0 +1,13 @@
+tablename_coins: coins
+tablename_coins_history: coins_history
+
+I18n_enable_url_path_select: true   # URL path should start with language symbols (true or false)
+I18n_available_locales: [ru, en]
+I18n_default_locale: ru
+
+updater_log_file_path: "log/updater.log"
+web_log_file_path: "log/web.log"
+
+price_additional_currency: EUR      # Additional currency of price if required (BTC, RUB, EUR, etc...) or none/null otherwise
+
+sleep_for_minutes: 10               # Time interval in minutes

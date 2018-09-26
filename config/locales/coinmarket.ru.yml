@@ -1,0 +1,26 @@
+ru:
+  cmarket:
+    title: Анализ рынка криптовалют
+    list_empty: Список пуст
+    undef: "н/о"
+    updated_at: "Представленные данные обновлены в"
+    save_failed: "Сохранение закончилось неудачно!"
+    price_currency: "Валюта цены"
+    price_currency_absent: "Запрашиваемая валюта для цены на данный момент отсутствует в таблице."
+    
+    table_fields:
+      rank: "#"
+      name: Название валюты
+      mcap: Рыночная капитализация
+      price: Цена
+      price_usd: Цена, USD
+      price_avg: Средняя цена за 24ч
+      price_top_coin: Цена в ТОП-валюте
+      circulating_supply: Оборотное снабжение
+      price_change: "Изм. цены за 24ч, %"
+
+    editor:
+      title: Редактирование значений
+      coin_name: Валюта
+      Cancel: Отмена
+      Save: Сохранить
