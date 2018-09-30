@@ -1,0 +1,34 @@
+version: "2"
+services:
+    app_db:
+      image: postgres:10.5
+      ports:
+        - 5432:5432
+      networks:
+        - default
+      environment:
+        POSTGRES_DB: test_coins
+        POSTGRES_USER: testuser
+        POSTGRES_PASSWORD: password
+      volumes:
+        - ./var/app/postgresql:/var/lib/postgresql
+    app_web:
+      image: app/web
+      ports:
+        - 3000:3000
+      links:
+        - app_db:app_db
+      networks:
+        - default
+      build:
+        context: .
+        dockerfile: docker/app_web/Dockerfile
+      command: bash -c "bundle install --path vendor/bundle; /home/app/www/run_all.sh;"
+      volumes:
+        - ./app:/home/app/www/app
+        - ./config:/home/app/www/config
+        - ./config/database.yml.docker:/home/app/www/config/database.yml
+        - ./lib:/home/app/www/lib
+        - ./Gemfile:/home/app/www/Gemfile
+        - ./Gemfile.lock:/home/app/www/Gemfile.lock
+        - /tmp
