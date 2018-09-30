@@ -28,6 +28,8 @@ Includes I18n support and the ability to edit coin's Price and Circulating Suppl
 
     a) Execute `run_all.sh` to run in console.
 
-    b) Execute `foreman_rbenv_start.sh` to run through [Foreman](https://theforeman.org).
+    b) Execute `foreman_rbenv_start.sh` to run through [Foreman](https://theforeman.org) and [rbenv](https://github.com/rbenv/rbenv).
+	
+	c) Execute `docker-compose up` to run through [Docker](https://www.docker.com).
 
 PS. Tested on Ruby 2.4.1 and PostgreSQL 9.5 / 10.4
