@@ -4,7 +4,7 @@ require 'logger'
 require 'yaml'
 require 'i18n'
 
-require_relative 'db_helper'
+require_relative 'db_model'
 
 module CoinMarket
   class General

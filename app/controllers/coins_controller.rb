@@ -12,36 +12,9 @@ class CoinsController < ApplicationController
     @main_price_column = price_column_name
     ensure_price_column_exist
 
-    # Prepare Columns for TableView
-    table_columns = [
-      'rank',
-      'name',
-      'mcap',
-      @main_price_column,
-      'price_avg',
-      'price_top_coin',
-      'circulating_supply',
-      'price_change'
-    ]
+    create_localized_table_fields
 
-    set_additional_price_column
-
-    @table_fields = {}
-    table_columns.each do |x|
-      @table_fields[x] = ((x != @price_adt_col) ? I18n.t("cmarket.table_fields.#{x}") : localized_price_name)
-    end
-
-    # Find N-th page of data
-    history_epoch = params['start']
-    history_epoch_offset = params['offset']
-
-    @table_data = query_db_data(history_epoch, history_epoch_offset)
-
-    # Number of Rows fetched
-    @table_data_count = @table_data ? @table_data.ntuples : 0
-
-    set_pagination(db_exec(sql_current_page_filter))
-
+    find_history_data
     build_response render
   end
 
@@ -56,13 +29,8 @@ class CoinsController < ApplicationController
     if params[:id].present? && params[:id].numeric?
       changes = prepare_changes(public_avail_change_fields)
 
-      res = db_exec(<<-SQL.squish)
-        UPDATE coins_history
-        SET #{changes.map { |k, v| "#{k} = '#{v}'" }.join(', ')}
-        WHERE (id = #{params[:id].to_i})
-      SQL
-
-      success = (res.cmd_tuples != 0)
+      res = CoinsHistory.update(params[:id].to_i, changes)
+      success = !res.count.zero?
       res.clear
     end
 
@@ -76,16 +44,7 @@ class CoinsController < ApplicationController
     params['start'] = (params['start'].present? ? params['start'].to_i : 0)
     params['start'] = 0 if params['start'].negative?
 
-    params['offset'] = (params['offset'].present? ? (params['offset'].to_i - 1) : 0)
-    params['offset'] = 0 if params['offset'].negative?
-  end
-
-  def query_db_data(history_epoch, history_epoch_offset)
-    db_exec(
-      sql_data_requested(
-        sql_query_num_filter(history_epoch, history_epoch_offset)
-      )
-    )
+    params['offset'] = (params['offset'].present? ? params['offset'].to_i : 0)
   end
 
   # Select Existing Price_Currency column for Price, Price Avg, Price Change and Price TOP-coin calculation
@@ -113,6 +72,38 @@ class CoinsController < ApplicationController
 
   def localized_price_name
     I18n.t('cmarket.table_fields.price') + ", #{@price_adt_name}"
+  end
+
+  def create_localized_table_fields
+    @table_fields = {}
+    set_additional_price_column
+
+    [
+      'rank',
+      'name',
+      'mcap',
+      @main_price_column,
+      'price_avg',
+      'price_top_coin',
+      'circulating_supply',
+      'price_change'
+    ].each do |x|
+      @table_fields[x] = ((x != @price_adt_col) ? I18n.t("cmarket.table_fields.#{x}") : localized_price_name)
+    end
+  end
+
+  # Find N-th page of data
+  def find_history_data
+    history_epoch = params['start']
+    history_epoch_offset = (params['offset'].zero? ? 0 : (params['offset'] - 1))
+
+    @currentPage = 1 if history_epoch.zero? && history_epoch_offset.zero?
+    @table_data = CoinsHistory.data_of(history_epoch, history_epoch_offset, @main_price_column)
+
+    query_num = (@currentPage.nil? && !@table_data.count.zero? ? @table_data.list.first['query_num'] : nil)
+    @currentPage = 0 if @currentPage.nil? && @table_data.count.zero?
+
+    set_pagination(CoinsHistory.pagination_info(query_num))
   end
 
   def set_pagination(res)
@@ -197,118 +188,10 @@ class CoinsController < ApplicationController
         end
       end
 
-      changes[ avail_change_fields[param_name][:col].blank? ? param_name : avail_change_fields[param_name][:col] ] = param_value
+      key = (avail_change_fields[param_name][:col].blank? ? param_name : avail_change_fields[param_name][:col])
+      changes[key] = param_value
     end
     changes
-  end
-
-  # Determine current page position in entire history
-  def sql_current_page_filter
-    filter_sql = <<-SQL.squish
-      SELECT COUNT(*) AS count
-        FROM (SELECT 1 FROM coins_history GROUP BY query_num) AS tbl
-      UNION ALL
-      SELECT MAX(query_num) AS count
-        FROM coins_history
-    SQL
-
-    if @currentPage.nil?
-      if @table_data_count.zero?
-        @currentPage = 0
-      else
-        filter_sql += <<-SQL.squish.prepend(' ')
-          UNION ALL SELECT COUNT(*) AS count
-          FROM (
-            SELECT 1 FROM coins_history
-            WHERE (query_num > #{@table_data.first['query_num']})
-            GROUP BY query_num
-          ) AS tbl
-        SQL
-      end
-    end
-    filter_sql
-  end
-
-  def sql_query_num_filter(history_epoch, history_epoch_offset)
-    if history_epoch.zero?
-      if history_epoch_offset.zero?
-        filter_sql = <<-SQL.squish
-          SELECT MAX(query_num)
-          FROM coins_history
-        SQL
-        @currentPage = 1
-        return filter_sql
-      end
-
-      filter_sql = <<-SQL.squish
-        SELECT query_num
-        FROM coins_history
-        GROUP BY query_num
-        ORDER BY query_num
-        DESC OFFSET #{history_epoch_offset}
-        LIMIT 1
-      SQL
-      return filter_sql
-    end
-
-    <<-SQL.squish
-      SELECT query_num
-      FROM coins_history
-      WHERE (query_num <= #{history_epoch})
-      GROUP BY query_num
-      ORDER BY query_num
-      DESC OFFSET #{history_epoch_offset}
-      LIMIT 1
-    SQL
-  end
-
-  def sql_data_requested(query_num_filter_sql)
-    <<-SQL.squish
-      SELECT cht.id, coins.name, coins.symbol, cht.rank,
-        cht.#{@main_price_column},
-        ROUND(cht.#{@main_price_column} * cht.circulating_supply) AS mcap,
-        cht.circulating_supply,
-        cht.updated_at,
-        cht.query_num,
-
-        CASE WHEN (top_price.top_coin_price != 0) THEN ROUND((cht.#{@main_price_column} / top_price.top_coin_price)::numeric, 10) ELSE NULL END AS price_top_coin,
-        (
-          SELECT ROUND(AVG(#{@main_price_column})::numeric, 5)
-          FROM coins_history AS hst
-          WHERE (hst.coin_id = cht.coin_id) AND (hst.updated_at > (cht.updated_at - interval '24 hours'))
-        ) AS price_avg,
-
-        CASE WHEN (old_price.price != 0) THEN ROUND((100 * (cht.#{@main_price_column} - old_price.price) / old_price.price)::numeric, 2) ELSE NULL END AS price_change
-
-      FROM coins_history AS cht
-      INNER JOIN coins ON (coins.id = cht.coin_id),
-      LATERAL (
-        SELECT COALESCE(#{@main_price_column}, 0) AS price
-        FROM coins_history AS hst
-        WHERE (hst.coin_id = cht.coin_id) AND (hst.updated_at > (cht.updated_at - interval '24 hours')) AND (hst.#{@main_price_column} != 0)
-        ORDER BY updated_at ASC
-        LIMIT 1
-      ) AS old_price,
-      (
-        SELECT COALESCE(#{@main_price_column}, 0) AS top_coin_price
-        FROM coins_history
-        ORDER BY query_num DESC, rank ASC
-        LIMIT 1
-      ) AS top_price
-      WHERE cht.query_num = (#{query_num_filter_sql})
-      ORDER BY cht.rank
-    SQL
-  end
-
-  def table_price_column_exist?
-    res = db_exec(<<-SQL.squish)
-      SELECT TRUE FROM pg_attribute
-      WHERE attrelid = (
-        SELECT pgc.oid FROM pg_class pgc JOIN pg_namespace pgn ON (pgn.oid = pgc.relnamespace)
-        WHERE ((pgn.nspname = CURRENT_SCHEMA()) AND (pgc.relname = 'coins_history'))
-      ) AND (attname = '#{@main_price_column}') AND (NOT attisdropped) AND (attnum > 0)
-    SQL
-    !res.ntuples.zero?
   end
 
   # Ensure Price column exists in a history table
@@ -316,7 +199,7 @@ class CoinsController < ApplicationController
   def ensure_price_column_exist
     return if @main_price_column == 'price_usd'
 
-    if table_price_column_exist?
+    if CoinsHistory.field_exist?(@main_price_column)
       @requested_price_currency_absent = false
       return
     end

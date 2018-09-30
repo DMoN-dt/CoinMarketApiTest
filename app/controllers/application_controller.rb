@@ -2,15 +2,16 @@ class ApplicationController
   attr_reader :request
   attr_reader :logger
   attr_reader :settings
-  attr_reader :db
 
   Time::DATE_FORMATS[:rus_time_date] = '%k:%M %d.%m.%Y'
 
   def initialize(request, logger, database, settings)
     @request  = request
     @logger   = logger
-    @db       = database
     @settings = settings
+
+    Coin.db = database
+    CoinsHistory.db = database
 
     @default_layout = 'main'
   end
@@ -31,10 +32,6 @@ class ApplicationController
 
   def action_name
     params[:action]
-  end
-
-  def db_exec(query_str)
-    db.exec query_str
   end
 
   def url_for(args = {})

@@ -3,8 +3,12 @@ require_relative 'coins_general'
 require 'erb'
 require 'slim'
 
-app_files = File.expand_path('../../app/controllers/*.rb', __FILE__)
-Dir.glob(app_files).each { |file| require(file) }
+[
+  '../../app/models/*.rb',
+  '../../app/controllers/*.rb',
+].each do |required_path|
+  Dir.glob(File.expand_path(required_path, __FILE__)).each { |file| require(file) }
+end
 
 module CoinMarket
   class Router
@@ -41,6 +45,11 @@ module CoinMarket
       @db       = database
       @settings = settings
       @url_contains_i18n = settings[:I18n_enable_url_path_select]
+
+      $tablename_coins = settings[:tablename_coins]
+      $tablename_coins_history = settings[:tablename_coins_history]
+
+      logger.debug "New request path: #{@request.path}, params: #{@request.params.to_json}"
     end
 
     def route!

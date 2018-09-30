@@ -10,6 +10,9 @@ end
 
 require_relative 'coins_general'
 
+model_files = File.expand_path('../../app/models/*.rb', __FILE__)
+Dir.glob(model_files).each { |file| require(file) }
+
 require 'net/http'
 require 'uri'
 
@@ -21,14 +24,10 @@ module CoinMarket
     attr_reader :coins_num_more
     attr_reader :price_additional_currency
 
-    attr_reader :db
-    attr_reader :tablename_coins
-    attr_reader :tablename_coins_history
-
     # Do the Job
     #
     def start
-      if db.nil?
+      unless db_ready?
         logger.info('Unable to start without connection to Database !')
         return
       end
@@ -52,8 +51,11 @@ module CoinMarket
       default_params.each_key { |key| iparams[key] = default_params[key] unless iparams.key?(key) }
 
       @logger = General.open_log(iparams[:log_level], iparams[:log_file_path], iparams[:log_to_stdout])
+      $logger = @logger
 
       initialize_i18n
+
+      return unless db_ready?
 
       @coins_num = iparams[:coins_num]
       
@@ -63,17 +65,10 @@ module CoinMarket
 
       @price_additional_currency = iparams[:price_additional_currency]
 
-      @tablename_coins = settings[:tablename_coins]
-      @tablename_coins_history = settings[:tablename_coins_history]
+      $tablename_coins = settings[:tablename_coins]
+      $tablename_coins_history = settings[:tablename_coins_history]
 
-      initialize_database!
       initialize_database_tables!
-    end
-
-    # Database connection establishment
-    #
-    def initialize_database!
-      @db = DbHelper.new(logger)
     end
 
     def initialize_database_tables!
@@ -117,32 +112,24 @@ module CoinMarket
       logger.info 'CoinMarketCap queried Successfully'
 
       # Look for coins existing in DB
-      coins_select_sql = <<-SQL.squish
-        SELECT id, symbol, mcap_id
-        FROM coins
-        LIMIT #{coins_num}
-      SQL
-
-      known_coins = db.exec coins_select_sql
-      known_coins_count = known_coins.ntuples
+      coins = Coin.first(coins_num)
 
       # Is it a first query and there is nothing in DB ?
-      if known_coins_count.zero?
+      if coins.count.zero?
         logger.info "Coins table is empty! Let's fill it with a maximum of #{coins_num} coins received."
 
-        known_coins.clear
+        coins.clear
 
-        res = db.exec(<<-SQL.squish)
-          INSERT INTO coins (name, symbol, mcap_id)
-          VALUES #{data_to_values(data_arr, coins_num)}
-        SQL
+        res = Coin.create(data_arr[0, coins_num])
 
-        logger.info "Inserted #{res.cmd_tuples} coins."
+        logger.info "Inserted #{res.count} coins."
         res.clear
 
-        known_coins = db.exec coins_select_sql
-        known_coins_count = known_coins.ntuples
+        coins = Coin.first(coins_num)
       end
+
+      known_coins = coins.list
+      known_coins_count = coins.count
 
       # Fill a new history data
       coins_info = []
@@ -187,17 +174,11 @@ module CoinMarket
 
       # Save to DB
       if coins_info.length
-        db.exec(<<-SQL.squish).clear
-          SELECT nextval('coins_history_query_num_seq')
-        SQL
+        CoinsHistory.increase_sequence(:query_num)
 
-        response = db.exec(<<-SQL.squish)
-          INSERT INTO coins_history (#{data_fields(coins_info)})
-          VALUES #{data_values(coins_info)}
-        SQL
-
-        if response.cmd_tuples == coins_info.length
-          logger.debug "#{response.cmd_tuples} rows Inserted into coins_history Successfully"
+        response = CoinsHistory.create(data_fields(coins_info), data_values(coins_info))
+        if response.count == coins_info.length
+          logger.debug "#{response.count} rows Inserted into coins_history Successfully"
         else
           logger.error 'Insert of new coins history is Failed'
         end
@@ -214,7 +195,12 @@ module CoinMarket
     end
 
     private
-    
+
+    def db_ready?
+      @db ||= DbHelper.new(logger)
+      return !@db.nil?
+    end
+
     def initialize_i18n
       I18n.load_path = settings[:I18n_load_path]
       I18n.available_locales = settings[:I18n_available_locales]
@@ -223,39 +209,15 @@ module CoinMarket
     end
 
     def create_database_sequences
-      db.create_sequence(tablename_coins + '_id_seq', 1)
-      db.create_sequence(tablename_coins_history + '_id_seq', 1)
-      db.create_sequence(tablename_coins_history + '_query_num_seq')
+      Coin.create_sequence('id', 1)
+      CoinsHistory.create_sequence('id', 1)
+      CoinsHistory.create_sequence('query_num')
     end
 
     def create_database_tables
-      db.create_table(
-        tablename_coins,
-        [
-          { name: 'id', type: 'integer', primary: true, null: false, default: "nextval('coins_id_seq')" },
-          { name: 'name', type: 'character varying(20)', null: false }, # Coin name
-          { name: 'symbol', type: 'character varying(20)', null: false }, # Coin symbol (BTC, ETH etc.)
-          { name: 'mcap_id', type: 'character varying(20)', null: false } # Coin ID on market
-        ]
-      )
-
-      db.create_table(
-        tablename_coins_history,
-        [
-          { name: 'id', type: 'integer', primary: true, null: false, default: "nextval('coins_history_id_seq')" },
-          { name: 'query_num', type: 'integer', null: false, default: "currval('coins_history_query_num_seq')" }, # Request number
-          { name: 'coin_id', type: 'integer', null: false }, # Coin ID
-          { name: 'rank', type: 'smallint', null: false, default: 0 }, # Coin rank
-          { name: 'price_usd', type: 'double precision', null: false, default: 0.0 }, # Price in USD
-          { name: 'circulating_supply', type: 'double precision', null: false, default: 0.0 }, # Circulating Supply
-          { name: 'updated_at', type: 'timestamp with time zone', null: false, default: 'NOW()' } # Request timestamp
-        ]
-      )
-
-      db.exec(<<-SQL.squish).clear
-        CREATE INDEX IF NOT EXISTS query_num_idx
-        ON #{tablename_coins_history} (query_num DESC)
-      SQL
+      Coin.init_table
+      CoinsHistory.init_table
+      CoinsHistory.create_index(:query_num_idx, 'query_num DESC')
     end
 
     # Add column with additional currency of price if required
@@ -263,24 +225,8 @@ module CoinMarket
       return if price_additional_currency.blank?
       price_column = 'price_' + price_additional_currency.downcase
 
-      # Check whether column price_XXXX exists in a history table
-      begin
-        db.exec(<<-SQL.squish).clear
-          ALTER TABLE #{tablename_coins_history}
-          ADD COLUMN IF NOT EXISTS #{price_column}
-          DOUBLE PRECISION NOT NULL DEFAULT 0;
-        SQL
-      rescue PG::SyntaxError
-        begin
-          db.exec(<<-SQL.squish).clear
-            ALTER TABLE #{tablename_coins_history}
-            ADD COLUMN #{price_column}
-            DOUBLE PRECISION NOT NULL DEFAULT 0;
-          SQL
-        rescue PG::DuplicateColumn
-          nil
-        end
-      end
+      # Ensure the column price_XXXX exists in a history table
+      CoinsHistory.ensure_field_exist(price_column)
     end
 
     def response_ok?(response)
@@ -323,18 +269,6 @@ module CoinMarket
       end
 
       coins_info << data
-    end
-
-    def data_to_values(data_arr, coins_num)
-      data_arr[0, coins_num].map { |v| "(#{values_to_string(v)})" }.join(',')
-    end
-
-    def values_to_string(val)
-      [
-        val['name'],
-        val['symbol'],
-        val['id']
-      ].map { |v| "'#{v}'" }.join(',')
     end
 
     def data_fields(coins_info)

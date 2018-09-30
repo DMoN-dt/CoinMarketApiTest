@@ -8,7 +8,7 @@
   .alert.alert-danger.text-left(role="alert")
     span #{I18n.t("cmarket.price_currency_absent")}
 
-- if @table_data_count.positive?
+- if @table_data.count.positive?
 
   - if @totalPages&.positive?
     center: .paginate.paginate-default
@@ -32,7 +32,7 @@
         a.pag_el(href="#{pagination_link(@totalPages)}") #{@totalPages}
 
   - tz_utc_offset_moscow = 3
-  p #{I18n.t('cmarket.updated_at')} #{@table_data.first['updated_at'].in_time_zone(tz_utc_offset_moscow).to_formatted_s(:rus_time_date)}
+  p #{I18n.t('cmarket.updated_at')} #{@table_data.list.first['updated_at'].in_time_zone(tz_utc_offset_moscow).to_formatted_s(:rus_time_date)}
 
 .listview.listview-default.table#coins_data(data-currency="#{params['currency']}")
   ul.listview-container-ul
@@ -40,9 +40,9 @@
       - @table_fields.values.each do |col_title|
         span.field.text-center #{col_title}
 
-    - if @table_data_count.positive?
+    - if @table_data.count.positive?
       .table-body
-        - @table_data.each do |data_row|
+        - @table_data.list.each do |data_row|
           li.lv-item(item-id="#{data_row['id']}" clickable)
             - @table_fields.each_key do |fname|
               - tclass = 'text-center'
