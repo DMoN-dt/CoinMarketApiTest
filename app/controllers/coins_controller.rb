@@ -118,7 +118,7 @@ class CoinsController < ApplicationController
   end
 
   def pagination_link(page)
-    pparams = url_path_params.dup
+    pparams = url_path_params.dup || {}
     pparams['start']  = @offset_start
     pparams['offset'] = page
     pparams.to_query.prepend('?')
@@ -148,6 +148,7 @@ class CoinsController < ApplicationController
     changes = {}
 
     params.each do |param_name, param_value|
+      param_name = param_name.to_s
       next if avail_change_fields[param_name].nil?
 
       if !param_value.nil? && !avail_change_fields[param_name][:minimum].nil? && (param_value.to_f < avail_change_fields[param_name][:minimum])

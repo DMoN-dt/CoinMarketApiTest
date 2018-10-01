@@ -12,3 +12,7 @@ gem 'erb2haml'
 gem 'slim'
 gem 'sass'
 gem 'sprockets'
+
+group :test do
+  gem 'rspec'
+end
